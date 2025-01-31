@@ -1,5 +1,5 @@
-github.com/NickP005/go_mcminterface v1.0.10 h1:iDuoCZh9WTJ2q1Heszq9Mu7agMDbW538Q+Pmaft+J6w=
-github.com/NickP005/go_mcminterface v1.0.10/go.mod h1:BmLgQUtM6vT0JllDItdipni3Iphums5uhG3O6wosgro=
+github.com/NickP005/go_mcminterface v1.0.12 h1:3NxSj/CsJFG3X1on0tQGjC64/BNp4fQcWavaE0wgF0I=
+github.com/NickP005/go_mcminterface v1.0.12/go.mod h1:BmLgQUtM6vT0JllDItdipni3Iphums5uhG3O6wosgro=
 github.com/sigurn/crc16 v0.0.0-20240131213347-83fcde1e29d1 h1:NVK+OqnavpyFmUiKfUMHrpvbCi2VFoWTrcpI7aDaJ2I=
 github.com/sigurn/crc16 v0.0.0-20240131213347-83fcde1e29d1/go.mod h1:9/etS5gpQq9BJsJMWg1wpLbfuSnkm8dPF6FdW2JXVhA=
 golang.org/x/crypto v0.32.0 h1:euUpcYgM8WcP71gNpTqQCn6rC2t6ULUPiOzfWaXVVfc=

@@ -19,28 +19,15 @@ package main
  */
 
 import (
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 
+	wots "github.com/NickP005/WOTS-Go"
 	mcm "github.com/NickP005/go_mcminterface"
 )
-
-func bytesToUint32Array(data []byte) ([8]uint32, error) {
-	if len(data) != 32 { // Expecting 32 bytes for 8 uint32s (4 bytes each)
-		return [8]uint32{}, fmt.Errorf("invalid input length: expected 32 bytes, got %d", len(data))
-	}
-
-	var result [8]uint32
-	for i := 0; i < 8; i++ {
-		result[i] = binary.LittleEndian.Uint32(data[i*4 : (i+1)*4])
-	}
-
-	return result, nil
-}
 
 // MeshAPISubmitRequest represents the request body for /construction/submit
 
@@ -120,7 +107,7 @@ func main() {
 
 	// Set amounts
 	tx.SetSendTotal(*amount)
-	tx.SetChangeTotal(*balance - *amount) // Assuming no fee
+	tx.SetChangeTotal(*balance - *amount - *fee)
 	tx.SetFee(*fee)
 
 	// Add destination
@@ -128,36 +115,22 @@ func main() {
 	tx.AddDestination(dstEntry)
 	tx.SetDestinationCount(1)
 
+	// Generate transaction hash
+	var message [32]byte = tx.GetMessageToSign()
+
 	// Sign transaction
 	secretBytes, err := hex.DecodeString(*secret)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding secret key: %v\n", err)
 		os.Exit(1)
 	}
-
-	// Generate transaction hash
-	txHash := tx.Hash()
-	if len(txHash) != 32 {
-		fmt.Fprintf(os.Stderr, "Error: Invalid transaction hash length\n")
-		os.Exit(1)
-	}
-
-	// Get components from secret key
-	components := componentsGenerator(secretBytes)
-	fmt.Println("Secret Key:", hex.EncodeToString(secretBytes))
-	fmt.Println("Private Seed:", hex.EncodeToString(components.PrivateSeed))
+	var private_key [32]byte
+	copy(private_key[:], secretBytes)
+	signing_keypair, _ := wots.Keygen(private_key)
 
 	// Sign with fixed length inputs
-
-	// cast components.AddrSeed to to [8]uint32
-	addr_seed, err := bytesToUint32Array(components.AddrSeed)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error converting address seed: %v\n", err)
-		os.Exit(1)
-	}
-	signature := make([]byte, wotsSigBytes)
-	WotsSign(signature, txHash, components.PrivateSeed, components.PublicSeed, addr_seed[:])
-	tx.SetWotsSignature(signature)
+	var signature [2144]byte = signing_keypair.Sign(message)
+	tx.SetWotsSignature(signature[:])
 
 	// Create MeshAPI request
 	request := MeshAPISubmitRequest{

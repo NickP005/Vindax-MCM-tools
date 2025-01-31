@@ -86,8 +86,12 @@ The tool will output a JSON object compatible with the MeshAPI /construction/sub
 
 Join our communities for support and discussions:
 
+<div align="center">
+
 [![NickP005 Development Server](https://img.shields.io/discord/709417966881472572?color=7289da&label=NickP005%20Development%20Server&logo=discord&logoColor=white)](https://discord.gg/Q5jM8HJhNT)   
-[![Mochimo Official](https://img.shields.io/discord/1234567890?color=7289da&label=Mochimo&logo=discord&logoColor=white)](https://discord.gg/SvdXdr2j3Y)
+[![Mochimo Official](https://img.shields.io/discord/460867662977695765?color=7289da&label=Mochimo%20Official&logo=discord&logoColor=white)](https://discord.gg/SvdXdr2j3Y)
+
+</div>
 
 - **NickP005 Development Server**: Technical support and development discussions
 - **Mochimo Official**: General Mochimo blockchain discussions and community

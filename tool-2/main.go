@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	wots "github.com/NickP005/WOTS-Go"
 )
 
 type Account struct {
@@ -21,14 +23,14 @@ type Output struct {
 }
 
 type Components struct {
-	PrivateSeed []byte
-	PublicSeed  []byte
-	AddrSeed    []byte
+	PrivateSeed [32]byte
+	PublicSeed  [32]byte
+	AddrSeed    [32]byte
 }
 
-func mochimoHash(data []byte) []byte {
+func mochimoHash(data []byte) [32]byte {
 	hash := sha256.Sum256(data)
-	return hash[:]
+	return hash
 }
 
 /*
@@ -80,17 +82,26 @@ func generateAccount(seed []byte, index uint64) (*Account, error) {
 	if len(seed) != 32 {
 		return nil, fmt.Errorf("seed must be exactly 32 bytes, got %d", len(seed))
 	}
+	var privateKey [32]byte
+	copy(privateKey[:], seed)
 
-	// Generate components from seed
-	components := componentsGenerator(seed)
+	keypair, err := wots.Keygen(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate WOTS keypair: %v", err)
+	}
 
-	// Create WOTS address using addr_seed
-	pk := WOTSPkGen(components.PrivateSeed, components.PublicSeed, [32]byte(components.AddrSeed))
+	var public_key [2208]byte
+	copy(public_key[:], keypair.PublicKey[:])
+	copy(public_key[2144:], keypair.Components.PublicSeed[:])
+	copy(public_key[2144+32:], keypair.Components.AddrSeed[:])
+
+	// Set the last 12 bytes of public key to default tag
+	copy(public_key[2208-12:], []byte{66, 0, 0, 0, 14, 0, 0, 0, 1, 0, 0, 0})
 
 	return &Account{
 		MCMAccountNumber: fmt.Sprintf("%020x", index),
-		WOTSPublicKey:    hex.EncodeToString(pk),
-		WOTSSecretKey:    hex.EncodeToString(components.PrivateSeed),
+		WOTSPublicKey:    hex.EncodeToString(public_key[:]),
+		WOTSSecretKey:    hex.EncodeToString(seed),
 	}, nil
 }
 
