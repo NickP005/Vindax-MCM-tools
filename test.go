@@ -111,13 +111,6 @@ func main() {
 	changeAccount := output.Accounts[1]
 	destAddress := addresses[2]
 
-	if err := createTransaction(sourceAccount.WOTSPublicKey, sourceAccount.WOTSSecretKey, 10000, changeAccount.WOTSPublicKey, destAddress, 100); err != nil {
-		fmt.Printf("Failed to create transaction: %v\n", err)
-		return
-	}
-
-	fmt.Println("Transaction created successfully")
-
 	// Resolve TAG of source address
 	meshClient := NewMeshAPIClient("http://localhost:8080")
 	err, address, amount := meshClient.ResolveTAG(addresses[0])
@@ -125,6 +118,13 @@ func main() {
 		fmt.Printf("Failed to resolve TAG: %v\n", err)
 		return
 	}
-
 	fmt.Printf("Resolved TAG %s to address %s with amount %d\n", addresses[0], address, amount)
+
+	if err := createTransaction(sourceAccount.WOTSPublicKey, sourceAccount.WOTSSecretKey, amount, changeAccount.WOTSPublicKey, destAddress, 1); err != nil {
+		fmt.Printf("Failed to create transaction: %v\n", err)
+		return
+	}
+
+	fmt.Println("Transaction created successfully")
+
 }

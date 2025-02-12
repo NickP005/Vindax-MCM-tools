@@ -1,7 +1,7 @@
 # Vindax tools for MCM3.0
 
 ## Tool 1
-A command-line tool that takes in a MCM 2.X WOTS address as 4416 Hex characters, tagged or untagged, and converts it into a MCM 3.0 address output in Hex, padded to 2x20 bytes.
+A command-line tool that takes in a MCM 2.X WOTS address as 4416 Hex characters, tagged or untagged, and converts it into a MCM 3.0 address. The output can be either in Hex format (padded to 2x20 bytes) or in Base58 format with checksum.
 
 ### Usage
 ```bash
@@ -9,8 +9,28 @@ A command-line tool that takes in a MCM 2.X WOTS address as 4416 Hex characters,
 cd tool-1
 go build
 
-# Run the tool
+# Run the tool with hex output (default)
 ./tool-1 -wots <4416_character_hex_string>
+
+# Run the tool with base58 output
+./tool-1 -wots <4416_character_hex_string> -base58
+```
+
+The base58 output format includes a CRC16-XMODEM checksum and is useful for:
+- Human-readable address format
+- Error detection through checksum verification
+- Shorter representation of addresses
+- Compatibility with wallet displays and QR codes
+
+Example outputs for the same address:
+```
+# Hex format
+./tool-1 -wots <address>
+> 9f810c2447a76e93b17ebff96c0b29952e4355f1
+
+# Base58 format
+./tool-1 -wots <address> -base58
+> kHtV35ttVpyiH42FePCiHo2iFmcJS3
 ```
 
 ## Tool 2

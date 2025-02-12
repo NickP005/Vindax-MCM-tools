@@ -24,11 +24,58 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/btcsuite/btcutil/base58"
+	"github.com/sigurn/crc16"
+
 	"github.com/NickP005/go_mcminterface"
 )
 
+func AddrTagToBase58(tag []byte) (string, error) {
+	if len(tag) != 20 {
+		return "", fmt.Errorf("invalid address tag length")
+	}
+
+	combined := make([]byte, 22)
+	copy(combined, tag)
+
+	// Calculate CRC using XMODEM
+	table := crc16.MakeTable(crc16.CRC16_XMODEM)
+	crc := crc16.Checksum(tag, table)
+
+	// Append in little-endian
+	combined[20] = byte(crc & 0xFF)
+	combined[21] = byte((crc >> 8) & 0xFF)
+
+	return base58.Encode(combined), nil
+}
+
+func ValidateBase58Tag(addr string) bool {
+	decoded := base58.Decode(addr)
+	if len(decoded) != 22 {
+		return false
+	}
+
+	// Get stored checksum (little-endian)
+	storedCsum := uint16(decoded[21])<<8 | uint16(decoded[20])
+
+	// Calculate CRC on tag portion using XMODEM
+	table := crc16.MakeTable(crc16.CRC16_XMODEM)
+	actualCrc := crc16.Checksum(decoded[:20], table)
+
+	return storedCsum == actualCrc
+}
+
+func Base58ToAddrTag(addr string) ([]byte, error) {
+	decoded := base58.Decode(addr)
+	if len(decoded) != 22 {
+		return nil, fmt.Errorf("invalid base58 tag length")
+	}
+	return decoded[:20], nil
+}
+
 func main() {
 	wotsAddr := flag.String("wots", "", "WOTS address as hex string (4416 characters)")
+	base58Flag := flag.Bool("base58", false, "Output address in base58 format")
 	flag.Parse()
 
 	if *wotsAddr == "" {
@@ -46,6 +93,16 @@ func main() {
 	*wotsAddr = (*wotsAddr)[:len(*wotsAddr)-64*2]
 
 	mcmAddr := go_mcminterface.WotsAddressFromHex(*wotsAddr)
+	addr := mcmAddr.GetAddress()
 
-	fmt.Printf("%x\n", mcmAddr.GetAddress())
+	if *base58Flag {
+		base58Addr, err := AddrTagToBase58(addr)
+		if err != nil {
+			fmt.Printf("Error converting to base58: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(base58Addr)
+	} else {
+		fmt.Printf("%x\n", addr)
+	}
 }

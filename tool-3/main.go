@@ -113,7 +113,7 @@ func main() {
 	} else if *dstAddress == "" && len(*dstAddress) != 40 {
 		fmt.Fprintln(os.Stderr, "Error: Destination address is required")
 		os.Exit(1)
-	} else if *amount_int <= 0 {
+	} else if *amount_int < 0 {
 		fmt.Fprintln(os.Stderr, "Error: Amount to send is required")
 		os.Exit(1)
 	} else if *secret == "" {
@@ -137,6 +137,7 @@ func main() {
 	// Set source and change addresses
 	srcAddr := mcm.WotsAddressFromHex((*sourcePk)[:2208*2-64*2]) // Remove last 64 bytes (public seed and addrss) leaving just the public key
 	chgAddr := mcm.WotsAddressFromHex((*changePk)[:2208*2-64*2])
+	chgAddr.SetTAG(srcAddr.GetTAG())
 	tx.SetSourceAddress(srcAddr)
 	tx.SetChangeAddress(chgAddr)
 
@@ -175,15 +176,32 @@ func main() {
 	var signature [2144]byte = signing_keypair.Sign(message)
 	tx.SetWotsSignature(signature[:])
 
-	tx.SetWotsSigAddresses(signing_keypair.Components.AddrSeed[:])
+	var addr_seed_default_tag [32]byte
+	copy(addr_seed_default_tag[:], signing_keypair.Components.AddrSeed[:20])
+	copy(addr_seed_default_tag[20:], []byte{0x42, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00})
+	tx.SetWotsSigAddresses(addr_seed_default_tag[:])
 	tx.SetWotsSigPubSeed(signing_keypair.Components.PublicSeed)
 
-	tx.SetSignatureScheme("wots")
+	tx.SetSignatureScheme("wotsp")
 
 	tx.SetBlockToLive(0)
 
-	// Create parse request
-	request := ConstructionParseRequest{
+	/*
+			// Create parse request
+		request := ConstructionParseRequest{
+			NetworkIdentifier: struct {
+				Blockchain string `json:"blockchain"`
+				Network    string `json:"network"`
+			}{
+				Blockchain: "mochimo",
+				Network:    "mainnet",
+			},
+			Signed:      true,
+			Transaction: tx.String(),
+		}*/
+
+	// Create submit request
+	request := MeshAPISubmitRequest{
 		NetworkIdentifier: struct {
 			Blockchain string `json:"blockchain"`
 			Network    string `json:"network"`
@@ -191,8 +209,7 @@ func main() {
 			Blockchain: "mochimo",
 			Network:    "mainnet",
 		},
-		Signed:      true,
-		Transaction: tx.String(),
+		SignedTransaction: tx.String(),
 	}
 
 	// Output JSON
