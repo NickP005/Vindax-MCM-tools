@@ -1,14 +1,10 @@
 package main
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-
-	wots "github.com/NickP005/WOTS-Go"
-	mcm "github.com/NickP005/go_mcminterface"
 )
 
 // Account matches the structure from tool-2
@@ -43,17 +39,22 @@ func generateAccount() (*Account, error) {
 	return &result.Accounts[0], nil
 }
 
-func createTransaction(account *Account, destAddress string, amount uint64, balance uint64) error {
-	// Execute tool-3 to create transaction
+func createTransaction(sourceAddress string, sourceSecret string, sourceBalance uint64, changeAddress string, destAddress string, amount uint64) error {
+	fmt.Println("Source address:", sourceAddress)
+	fmt.Println("Source secret:", sourceSecret)
+	fmt.Println("Change address:", changeAddress)
+	fmt.Println("Destination address:", destAddress)
+
+	// Execute tool-3 to create transaction with updated parameters
 	cmd := exec.Command("./tool-3/tool-3",
-		"-src", account.MCMAccountNumber,
+		"-source-pk", sourceAddress,
 		"-dst", destAddress,
-		"-wots-pk", account.WOTSPublicKey,
-		"-change-pk", account.WOTSPublicKey, // Using same WOTS-PK for change
-		"-balance", fmt.Sprintf("%d", balance),
+		"-change-pk", changeAddress,
+		"-balance", fmt.Sprintf("%d", sourceBalance),
 		"-amount", fmt.Sprintf("%d", amount),
-		"-secret", account.WOTSSecretKey,
-		"-memo", "Test transaction")
+		"-secret", sourceSecret,
+		"-memo", "TEST",
+		"-fee", "500")
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -62,25 +63,68 @@ func createTransaction(account *Account, destAddress string, amount uint64, bala
 }
 
 func main() {
-	/*
-		// Test 1: Generate account
-		fmt.Println("=== Generating new account ===")
-		account, err := generateAccount()
+	// Read and parse cache.json
+	data, err := os.ReadFile("cache.json")
+	if err != nil {
+		fmt.Printf("Failed to read cache.json: %v\n", err)
+		return
+	}
+
+	var output Output
+	if err := json.Unmarshal(data, &output); err != nil {
+		fmt.Printf("Failed to parse JSON: %v\n", err)
+		return
+	}
+
+	// Print the account numbers
+
+	for i, account := range output.Accounts {
+		fmt.Printf("Account %d: %s\n", i+1, account.WOTSSecretKey)
+	}
+
+	// Get the addresses from tool-1 by giving the full account WOTSPublicKey
+	var addresses []string
+	for _, account := range output.Accounts {
+		cmd := exec.Command("./tool-1/tool-1", "-wots", account.WOTSPublicKey)
+		addressOutput, err := cmd.Output()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating account: %v\n", err)
-			os.Exit(1)
+			fmt.Printf("Failed to get address for account: %v\n", err)
+			continue
 		}
+		// remove \n newline
+		addressOutput = addressOutput[:len(addressOutput)-1]
+		addresses = append(addresses, string(addressOutput))
+	}
 
-		fmt.Printf("Generated Account:\n")
-		fmt.Printf("Address: %s\n", account.MCMAccountNumber)
-		fmt.Printf("WOTS-PK: %s\n", account.WOTSPublicKey)
-		fmt.Printf("Secret: %s\n\n", account.WOTSSecretKey)*/
+	// Print the addresses
+	for i, address := range addresses {
+		fmt.Printf("Address %d: %s", i+1, address)
+	}
 
-	// Generate keypair from cf1fca58d97b5fbb8b8221e94ec1f91048fb9597303e771a7de45891324bcfa0
-	private_seed := [32]byte{0xcf, 0x1f, 0xca, 0x58, 0xd9, 0x7b, 0x5f, 0xbb, 0x8b, 0x82, 0x21, 0xe9, 0x4e, 0xc1, 0xf9, 0x10, 0x48, 0xfb, 0x95, 0x97, 0x30, 0x3e, 0x77, 0x1a, 0x7d, 0xe4, 0x58, 0x91, 0x32, 0x4b, 0xcf, 0xa0}
-	keychain, _ := wots.NewKeychain(private_seed)
-	keypair := keychain.Next()
-	fmt.Printf("Public Key: %x\n", keypair.PublicKey)
-	addr := mcm.WotsAddressFromBytes(keypair.PublicKey[:])
-	fmt.Println("Public Key: ", hex.EncodeToString(addr.GetAddress()))
+	// Send transaction
+	if len(output.Accounts) < 3 {
+		fmt.Println("Need at least 2 accounts to send a transaction")
+		return
+	}
+
+	sourceAccount := output.Accounts[0]
+	changeAccount := output.Accounts[1]
+	destAddress := addresses[2]
+
+	if err := createTransaction(sourceAccount.WOTSPublicKey, sourceAccount.WOTSSecretKey, 10000, changeAccount.WOTSPublicKey, destAddress, 100); err != nil {
+		fmt.Printf("Failed to create transaction: %v\n", err)
+		return
+	}
+
+	fmt.Println("Transaction created successfully")
+
+	// Resolve TAG of source address
+	meshClient := NewMeshAPIClient("http://localhost:8080")
+	err, address, amount := meshClient.ResolveTAG(addresses[0])
+	if err != nil {
+		fmt.Printf("Failed to resolve TAG: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Resolved TAG %s to address %s with amount %d\n", addresses[0], address, amount)
 }

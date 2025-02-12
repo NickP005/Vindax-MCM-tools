@@ -45,9 +45,6 @@ func main() {
 	// Remove the last 32 bytes
 	*wotsAddr = (*wotsAddr)[:len(*wotsAddr)-64*2]
 
-	fmt.Println("Converting MCM 2.X WOTS address to MCM 3.0 format", *wotsAddr)
-	fmt.Println(len(*wotsAddr))
-
 	mcmAddr := go_mcminterface.WotsAddressFromHex(*wotsAddr)
 
 	fmt.Printf("%x\n", mcmAddr.GetAddress())

@@ -49,6 +49,18 @@ type MeshAPISubmitRequest struct {
 	SignedTransaction string `json:"signed_transaction"`
 }
 
+// Add new type for parse request
+type ConstructionParseRequest struct {
+	NetworkIdentifier NetworkIdentifier `json:"network_identifier"`
+	Signed            bool              `json:"signed"`
+	Transaction       string            `json:"transaction"`
+}
+
+type NetworkIdentifier struct {
+	Blockchain string `json:"blockchain"`
+	Network    string `json:"network"`
+}
+
 /*
  * main is the entry point for the MCM transaction submission tool
  *
@@ -76,12 +88,11 @@ type MeshAPISubmitRequest struct {
  */
 func main() {
 	// Define command line flags
-	src := flag.String("src", "", "Source account address (20 bytes hex)")
-	dst := flag.String("dst", "", "Destination account address (20 bytes hex)")
-	wotsPk := flag.String("wots-pk", "", "Source WOTS public key (2208 bytes hex)")
+	sourcePk := flag.String("source-pk", "", "Source WOTS public key (2208 bytes hex)")
 	changePk := flag.String("change-pk", "", "Change WOTS public key (2208 bytes hex)")
-	balance := flag.Uint64("balance", 0, "Source balance in nanoMCM")
-	amount := flag.Uint64("amount", 0, "Amount to send in nanoMCM")
+	sourceBalance := flag.Uint64("balance", 0, "Source balance in nanoMCM")
+	dstAddress := flag.String("dst", "", "Destination account address (20 bytes hex)")
+	amount_int := flag.Int64("amount", -1, "Amount to send in nanoMCM")
 	secret := flag.String("secret", "", "Secret key for signing (32 bytes hex)")
 	memo := flag.String("memo", "", "Optional transaction memo")
 	fee := flag.Uint64("fee", 500, "Transaction fee in nanoMCM")
@@ -90,9 +101,33 @@ func main() {
 	flag.Parse()
 
 	// Validate inputs
-	if *src == "" || *dst == "" || *wotsPk == "" || *changePk == "" || *secret == "" {
-		fmt.Fprintln(os.Stderr, "Error: Required parameters missing")
-		flag.Usage()
+	if *sourcePk == "" && len(*sourcePk) != 2208*2 {
+		fmt.Fprintln(os.Stderr, "Error: Source WOTS public key is required")
+		os.Exit(1)
+	} else if *changePk == "" && len(*changePk) != 2208*2 {
+		fmt.Fprintln(os.Stderr, "Error: Change WOTS public key is required")
+		os.Exit(1)
+	} else if *sourceBalance == 0 {
+		fmt.Fprintln(os.Stderr, "Error: Source balance is required")
+		os.Exit(1)
+	} else if *dstAddress == "" && len(*dstAddress) != 40 {
+		fmt.Fprintln(os.Stderr, "Error: Destination address is required")
+		os.Exit(1)
+	} else if *amount_int <= 0 {
+		fmt.Fprintln(os.Stderr, "Error: Amount to send is required")
+		os.Exit(1)
+	} else if *secret == "" {
+		fmt.Fprintln(os.Stderr, "Error: Secret key is required")
+		os.Exit(1)
+	}
+
+	// Convert amount to uint64
+	amount_uint := uint64(*amount_int)
+	amount := &amount_uint
+
+	// Source balance must be greater than amount + fee
+	if *sourceBalance < *amount+*fee {
+		fmt.Fprintln(os.Stderr, "Error: Insufficient balance to send amount and fee")
 		os.Exit(1)
 	}
 
@@ -100,18 +135,18 @@ func main() {
 	tx := mcm.NewTXENTRY()
 
 	// Set source and change addresses
-	srcAddr := mcm.WotsAddressFromHex(*wotsPk)
-	chgAddr := mcm.WotsAddressFromHex(*changePk)
+	srcAddr := mcm.WotsAddressFromHex((*sourcePk)[:2208*2-64*2]) // Remove last 64 bytes (public seed and addrss) leaving just the public key
+	chgAddr := mcm.WotsAddressFromHex((*changePk)[:2208*2-64*2])
 	tx.SetSourceAddress(srcAddr)
 	tx.SetChangeAddress(chgAddr)
 
 	// Set amounts
 	tx.SetSendTotal(*amount)
-	tx.SetChangeTotal(*balance - *amount - *fee)
+	tx.SetChangeTotal(*sourceBalance - *amount - *fee)
 	tx.SetFee(*fee)
 
 	// Add destination
-	dstEntry := mcm.NewDSTFromString(*dst, *memo, *amount)
+	dstEntry := mcm.NewDSTFromString(*dstAddress, *memo, *amount)
 	tx.AddDestination(dstEntry)
 	tx.SetDestinationCount(1)
 
@@ -128,12 +163,27 @@ func main() {
 	copy(private_key[:], secretBytes)
 	signing_keypair, _ := wots.Keygen(private_key)
 
+	// Check that public key matches source address
+	if mcm.WotsAddressFromBytes(signing_keypair.PublicKey[:]).Address != srcAddr.Address {
+		fmt.Println("wots from priv", mcm.WotsAddressFromBytes(signing_keypair.PublicKey[:]).Address)
+		fmt.Println("given wots", srcAddr.Address)
+		fmt.Fprintln(os.Stderr, "Error: Public key does not match source address")
+		os.Exit(1)
+	}
+
 	// Sign with fixed length inputs
 	var signature [2144]byte = signing_keypair.Sign(message)
 	tx.SetWotsSignature(signature[:])
 
-	// Create MeshAPI request
-	request := MeshAPISubmitRequest{
+	tx.SetWotsSigAddresses(signing_keypair.Components.AddrSeed[:])
+	tx.SetWotsSigPubSeed(signing_keypair.Components.PublicSeed)
+
+	tx.SetSignatureScheme("wots")
+
+	tx.SetBlockToLive(0)
+
+	// Create parse request
+	request := ConstructionParseRequest{
 		NetworkIdentifier: struct {
 			Blockchain string `json:"blockchain"`
 			Network    string `json:"network"`
@@ -141,7 +191,8 @@ func main() {
 			Blockchain: "mochimo",
 			Network:    "mainnet",
 		},
-		SignedTransaction: tx.String(),
+		Signed:      true,
+		Transaction: tx.String(),
 	}
 
 	// Output JSON
