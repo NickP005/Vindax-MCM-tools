@@ -40,10 +40,10 @@ func generateAccount() (*Account, error) {
 }
 
 func createTransaction(sourceAddress string, sourceSecret string, sourceBalance uint64, changeAddress string, destAddress string, amount uint64) error {
-	fmt.Println("Source address:", sourceAddress)
-	fmt.Println("Source secret:", sourceSecret)
-	fmt.Println("Change address:", changeAddress)
-	fmt.Println("Destination address:", destAddress)
+	//fmt.Println("Source address:", sourceAddress)
+	//fmt.Println("Source secret:", sourceSecret)
+	//fmt.Println("Change address:", changeAddress)
+	//fmt.Println("Destination address:", destAddress)
 
 	// Execute tool-3 to create transaction with updated parameters
 	cmd := exec.Command("./tool-3/tool-3",
@@ -77,10 +77,10 @@ func main() {
 	}
 
 	// Print the account numbers
-
-	for i, account := range output.Accounts {
-		fmt.Printf("Account %d: %s\n", i+1, account.WOTSSecretKey)
-	}
+	/*
+		for i, account := range output.Accounts {
+			fmt.Printf("Account %d: %s\n", i+1, account.WOTSSecretKey)
+		}*/
 
 	// Get the addresses from tool-1 by giving the full account WOTSPublicKey
 	var addresses []string
@@ -96,10 +96,11 @@ func main() {
 		addresses = append(addresses, string(addressOutput))
 	}
 
-	// Print the addresses
-	for i, address := range addresses {
-		fmt.Printf("Address %d: %s", i+1, address)
-	}
+	/*
+		// Print the addresses
+		for i, address := range addresses {
+			fmt.Printf("Address %d: %s", i+1, address)
+		}*/
 
 	// Send transaction
 	if len(output.Accounts) < 3 {
@@ -113,7 +114,7 @@ func main() {
 
 	// Resolve TAG of source address
 	meshClient := NewMeshAPIClient("http://localhost:8080")
-	err, address, amount := meshClient.ResolveTAG(addresses[0])
+	err, address, amount := meshClient.ResolveTAG(addresses[1])
 	if err != nil {
 		fmt.Printf("Failed to resolve TAG: %v\n", err)
 		return
@@ -125,6 +126,6 @@ func main() {
 		return
 	}
 
-	fmt.Println("Transaction created successfully")
+	//fmt.Println("Transaction created successfully")
 
 }

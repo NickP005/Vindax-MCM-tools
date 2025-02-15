@@ -67,19 +67,7 @@ go build
 ```
 
 ## Tool 3
-A command-line tool that takes in takes in the following values:
-```
-  Source Account
-  Destination Account
-  Source WOTS-PK
-  Change WOTS-PK
-  Source Balance
-  Send Amount
-  Secret Key
-  Memo
-  Fee
-```
-And outputs MeshAPI compatible data that Vindax needs to submit a transaction to the network
+A command-line tool that creates and signs Mochimo transactions, outputting them in a format compatible with the MeshAPI /construction/submit endpoint. The tool handles all cryptographic operations locally and produces a JSON output ready for network submission.
 
 ### Usage
 ```bash
@@ -88,19 +76,55 @@ cd tool-3
 go build
 
 # Run the tool with required parameters
-./tool-3 \
-  -src <20_bytes_hex>          # Source account address \
-  -dst <20_bytes_hex>          # Destination account address \
-  -wots-pk <2208_bytes_hex>    # Source WOTS public key \
+./tool-3 \ 
+  -src <20_bytes_hex>          # Source account address (TAG) \
+  -source-pk <2208_bytes_hex>  # Source WOTS public key \
   -change-pk <2208_bytes_hex>  # Change WOTS public key \
   -balance <uint64>            # Source balance in nanoMCM \
-  -amount <uint64>             # Amount to send in nanoMCM \
+  -dst <20_bytes_hex>          # Destination account address \
+  -amount <int64>              # Amount to send in nanoMCM \
   -secret <32_bytes_hex>       # Secret key for signing \
   -memo "Optional memo"        # Optional transaction memo \
   -fee 500                     # Optional: Transaction fee in nanoMCM (default: 500)
 ```
 
-The tool will output a JSON object compatible with the MeshAPI /construction/submit endpoint.
+### Example Output
+The tool outputs a JSON object ready for submission to the MeshAPI. Here's a sample interaction:
+
+```bash
+$ ./tool-3 -src 81998859591cf1f35fc174a40e14c8138e2a5e03 \
+          -source-pk <2208_bytes_public_key> \
+          -change-pk <2208_bytes_public_key> \
+          -balance 10000 \
+          -dst f5fc0d11f423e7849bd908dc8bbcabf3002ac0aa \
+          -amount 8999 \
+          -secret <32_bytes_secret> \
+          -memo "TEST"
+
+Resolving TAG 81998859591cf1f35fc174a40e14c8138e2a5e03
+Resolved TAG 81998859591cf1f35fc174a40e14c8138e2a5e03 to address 0x81998...652e1 with amount 8999
+{
+  "network_identifier": {
+    "blockchain": "mochimo",
+    "network": "mainnet"
+  },
+  "signed_transaction": "000000008199885959...000000"
+}
+```
+
+The tool performs several validations:
+- Verifies the source has sufficient balance for amount + fee
+- Validates that the secret key matches the source public key
+- Confirms all input parameters are of correct length
+- Checks that addresses are properly formatted
+
+Common errors you might encounter:
+```bash
+Error: Insufficient balance to send amount and fee
+Error: Public key does not match source address
+Error: Source account address is required
+Failed to resolve TAG: TAG not found
+```
 
 # Support & Community
 

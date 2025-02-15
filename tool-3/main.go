@@ -75,12 +75,14 @@ type NetworkIdentifier struct {
  *
  * Required flags:
  * -src: Source account address
- * -dst: Destination address
- * -wots-pk: Source WOTS public key
+ * -source-pk: Source WOTS public key
  * -change-pk: Change WOTS public key
  * -balance: Source balance in nanoMCM
- * -amount: Amount to send
- * -secret: Signing key
+ * -dst: Destination account address
+ * -amount: Amount to send in nanoMCM
+ * -secret: Secret key for signing
+ * -memo: Transaction memo
+ * -fee: Transaction fee (default: 500 nanoMCM)
  *
  * Optional flags:
  * -memo: Transaction memo
@@ -88,6 +90,7 @@ type NetworkIdentifier struct {
  */
 func main() {
 	// Define command line flags
+	sourceTag := flag.String("src", "", "Source account address (20 bytes hex)")
 	sourcePk := flag.String("source-pk", "", "Source WOTS public key (2208 bytes hex)")
 	changePk := flag.String("change-pk", "", "Change WOTS public key (2208 bytes hex)")
 	sourceBalance := flag.Uint64("balance", 0, "Source balance in nanoMCM")
@@ -101,7 +104,10 @@ func main() {
 	flag.Parse()
 
 	// Validate inputs
-	if *sourcePk == "" && len(*sourcePk) != 2208*2 {
+	if *sourceTag == "" && len(*sourceTag) != 40 {
+		fmt.Fprintln(os.Stderr, "Error: Source account address is required")
+		os.Exit(1)
+	} else if *sourcePk == "" && len(*sourcePk) != 2208*2 {
 		fmt.Fprintln(os.Stderr, "Error: Source WOTS public key is required")
 		os.Exit(1)
 	} else if *changePk == "" && len(*changePk) != 2208*2 {
@@ -125,6 +131,12 @@ func main() {
 	amount_uint := uint64(*amount_int)
 	amount := &amount_uint
 
+	tag, err := hex.DecodeString(*sourceTag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error decoding source tag: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Source balance must be greater than amount + fee
 	if *sourceBalance < *amount+*fee {
 		fmt.Fprintln(os.Stderr, "Error: Insufficient balance to send amount and fee")
@@ -136,8 +148,9 @@ func main() {
 
 	// Set source and change addresses
 	srcAddr := mcm.WotsAddressFromHex((*sourcePk)[:2208*2-64*2]) // Remove last 64 bytes (public seed and addrss) leaving just the public key
+	srcAddr.SetTAG(tag)
 	chgAddr := mcm.WotsAddressFromHex((*changePk)[:2208*2-64*2])
-	chgAddr.SetTAG(srcAddr.GetTAG())
+	chgAddr.SetTAG(tag)
 	tx.SetSourceAddress(srcAddr)
 	tx.SetChangeAddress(chgAddr)
 
