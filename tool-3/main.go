@@ -178,7 +178,9 @@ func main() {
 	signing_keypair, _ := wots.Keygen(private_key)
 
 	// Check that public key matches source address
-	if mcm.WotsAddressFromBytes(signing_keypair.PublicKey[:]).Address != srcAddr.Address {
+	derived_address := mcm.WotsAddressFromBytes(signing_keypair.PublicKey[:])
+	derived_address.SetTAG(tag)
+	if derived_address.Address != srcAddr.Address {
 		fmt.Println("wots from priv", mcm.WotsAddressFromBytes(signing_keypair.PublicKey[:]).Address)
 		fmt.Println("given wots", srcAddr.Address)
 		fmt.Fprintln(os.Stderr, "Error: Public key does not match source address")

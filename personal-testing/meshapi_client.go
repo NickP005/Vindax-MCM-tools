@@ -16,7 +16,7 @@ func NewMeshAPIClient(endpoint string) *MeshAPIClient {
 }
 
 func (c *MeshAPIClient) ResolveTAG(tag_hex string) (error, string, uint64) {
-	fmt.Println("Resolving TAG", tag_hex)
+	//fmt.Println("Resolving TAG", tag_hex)
 	resp, err := http.Post(c.endpoint+"/call", "application/json", bytes.NewBuffer([]byte(fmt.Sprintf(`{
 		"network_identifier": {
 			"blockchain": "mochimo",

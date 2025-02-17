@@ -69,9 +69,153 @@ kHtV35ttVpyiH42FePCiHo2iFmcJS3
 - The address includes a checksum to prevent typing errors
 - Users can send MCM directly to this address without any TAG resolution
 
+### Understanding Address Behavior
+The MCM 3.0 address system works similarly to the old TAG system, but with one crucial difference:
+- Addresses behave like TAGs did in MCM 2.x
+- **IMPLICITLY**: When sending to a never-used address, the blockchain automatically associates the WOTS+ public key with that address
+- This means the first transaction to an address sets its WOTS+ public key
+- Then at every transaction we change the public key part of an address, but the address remains the same
+
+This implicit behavior eliminates the need for explicit TAG resolution while maintaining the same security model.
+
 ### Security Notes
 - Keep the secret key (`wotsSecretKey`) secure and private
 - Back up both public and secret keys
 - The public key (`wotsPublicKey`) is needed for sending transactions
 - Never share your secret key with anyone
+
+## Checking Balances and Setting Up Endpoints
+
+### Setting Up Your Own Endpoint
+1. For production use, it's recommended to run your own MeshAPI endpoint:
+   ```bash
+   # Clone the repository
+   git clone https://github.com/NickP005/mochimo-mesh
+   cd mochimo-mesh
+   
+   # Follow installation instructions in the repository
+   ```
+
+2. While testing, you can use the public endpoint at `35.208.202.76:8080`
+
+### Checking Account Balance
+You can check an account's balance using the `/account/balance` endpoint:
+
+```bash
+curl -X POST http://35.208.202.76:8080/account/balance \
+  -H "Content-Type: application/json" \
+  -d '{
+    "network_identifier": {
+      "blockchain": "mochimo",
+      "network": "mainnet"
+    },
+    "account_identifier": { 
+      "address": "YOUR_ADDRESS_HERE"  
+    }
+  }'
+```
+
+For example, using address `0x9f810c2447a76e93b17ebff96c0b29952e4355f1`
+
+
+Example response:
+```json
+{
+  "block_identifier": {
+    "index": 660001,
+    "hash": "0x33632bf365999af93b8eb5bf4b4c33905b3e202d275a129d9771366a326b5527"
+  },
+  "balances": [
+    {
+      "value": "799998501",
+      "currency": { "symbol": "MCM", "decimals": 9 }
+    }
+  ]
+}
+```
+
+Note:
+- The balance is shown in nanoMCM (1 MCM = 1,000,000,000 nanoMCM)
+- `decimals: 9` indicates this conversion factor
+- Always run your own endpoint for production use
+- Public endpoints should only be used for testing
+
+### Security Considerations
+- Don't rely on public endpoints for critical operations
+- Running your own endpoint ensures data accuracy
+- Keep your endpoint secure and properly configured
+- Consider using SSL/TLS for endpoint connections
+
+## Creating Transactions
+
+### Understanding Key Components
+Before creating a transaction, it's important to understand the difference between:
+
+1. **Source Address** (20 bytes):
+   - This is the account identifier/TAG
+   - Used to locate the account on the blockchain
+   - Example: `81998859591cf1f35fc174a40e14c8138e2a5e03`
+
+2. **Source Public Key** (2208 bytes):
+   - The full WOTS public key
+   - Required for transaction validation
+   - Much longer than the address as it contains the complete cryptographic material
+
+3. **Change Public Key** (2208 bytes):
+   - ⚠️ IMPORTANT: Must be different from the source public key
+   - Used for receiving change from the transaction
+   - Should be a fresh, unused WOTS public key
+   - Once used, a WOTS key should never be reused
+
+### Creating a Transaction
+Use tool-3 with the following parameters:
+
+```bash
+./tool-3 \
+  -src <20_bytes_source_address> \
+  -source-pk <2208_bytes_source_pubkey> \
+  -change-pk <2208_bytes_change_pubkey> \
+  -balance <current_balance_in_nanomcm> \
+  -dst <20_bytes_destination_address> \
+  -amount <amount_in_nanomcm> \
+  -secret <32_bytes_secret_key> \
+  -memo "Optional memo" \
+  -fee 500
+```
+
+Example output:
+```json
+{
+  "network_identifier": {
+    "blockchain": "mochimo",
+    "network": "mainnet"
+  },
+  "signed_transaction": "000000008199885959..." // Long hex string
+}
+```
+
+### Important Notes
+1. **Key Management**:
+   - The source public key can only be used ONCE for sending
+   - Always use a fresh change public key for receiving change
+   - Never reuse any WOTS key after signing
+
+2. **Balance and Fees**:
+   - Ensure source address has sufficient balance for amount + fee
+   - Default fee is 500 nanoMCM
+   - The change amount is automatically calculated as: balance - amount - fee
+
+3. **Submitting the Transaction**:
+   The output JSON can be submitted to the MeshAPI endpoint:
+   ```bash
+   curl -X POST http://your-meshapi:8080/construction/submit \
+     -H "Content-Type: application/json" \
+     -d '<output_from_tool_3>'
+   ```
+
+### Security Best Practices
+- Generate a new change address for each transaction
+- Never share or reuse the secret key
+- Keep track of which public keys have been used
+- Verify all addresses and amounts before submitting
 
