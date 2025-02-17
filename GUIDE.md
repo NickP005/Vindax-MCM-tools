@@ -1,5 +1,23 @@
 # Guide: How to use the tools correctly
 
+## Quick Links
+- [Prerequisites](#prerequisites)
+  - [Installing Go](#installing-go)
+  - [Building the Tools](#building-the-tools)
+- [Address Generation](#address-generation-process)
+  - [Generate New Address](#1-generate-a-new-address)
+  - [Convert to Base58](#2-convert-to-base58-format)
+  - [Usage](#3-usage)
+  - [Understanding Addresses](#understanding-address-behavior)
+- [Checking Balances](#checking-balances-and-setting-up-endpoints)
+  - [Setting Up Endpoint](#setting-up-your-own-endpoint)
+  - [Checking Balance](#checking-account-balance)
+- [Creating Transactions](#creating-transactions)
+  - [Key Components](#understanding-key-components)
+  - [Transaction Creation](#creating-a-transaction)
+  - [Important Notes](#important-notes)
+  - [Security Best Practices](#security-best-practices)
+
 ## Prerequisites
 
 ### Installing Go
