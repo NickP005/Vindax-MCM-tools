@@ -55,7 +55,7 @@ func createTransaction(sourceAddress string, sourcePublicKey string, sourceSecre
 		"-balance", fmt.Sprintf("%d", sourceBalance),
 		"-amount", fmt.Sprintf("%d", amount),
 		"-secret", sourceSecret,
-		"-memo", "TEST",
+		"-memo", "688T",
 		"-fee", "500")
 
 	cmd.Stdout = os.Stdout

@@ -1,7 +1,7 @@
 github.com/NickP005/WOTS-Go v0.0.4 h1:SqWzmDqPbcfA8PdgoA4zYOTde9QrdGhIw8LmKDzMNYA=
 github.com/NickP005/WOTS-Go v0.0.4/go.mod h1:Ek7tiFBD/fCaXsTpePYXy+gOXzNhsACiJ6kY16O6GQ4=
-github.com/NickP005/go_mcminterface v1.0.13 h1:swXqw6luTPiLT+iZ79A9WrgZZz/5i1zV8bOotiEUsjA=
-github.com/NickP005/go_mcminterface v1.0.13/go.mod h1:BmLgQUtM6vT0JllDItdipni3Iphums5uhG3O6wosgro=
+github.com/NickP005/go_mcminterface v1.0.18 h1:M2YWG+NQkxUmM97QAlWdm+NUbmKkHEx+LINiOl64yfU=
+github.com/NickP005/go_mcminterface v1.0.18/go.mod h1:BmLgQUtM6vT0JllDItdipni3Iphums5uhG3O6wosgro=
 github.com/sigurn/crc16 v0.0.0-20240131213347-83fcde1e29d1 h1:NVK+OqnavpyFmUiKfUMHrpvbCi2VFoWTrcpI7aDaJ2I=
 github.com/sigurn/crc16 v0.0.0-20240131213347-83fcde1e29d1/go.mod h1:9/etS5gpQq9BJsJMWg1wpLbfuSnkm8dPF6FdW2JXVhA=
 golang.org/x/crypto v0.33.0 h1:IOBPskki6Lysi0lo9qQvbxiQ+FvsCC/YWOecCHAixus=

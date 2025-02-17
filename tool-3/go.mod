@@ -4,7 +4,7 @@ go 1.23.5
 
 require (
 	github.com/NickP005/WOTS-Go v0.0.4
-	github.com/NickP005/go_mcminterface v1.0.13
+	github.com/NickP005/go_mcminterface v1.0.18
 )
 
 require (

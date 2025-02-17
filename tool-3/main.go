@@ -161,6 +161,10 @@ func main() {
 
 	// Add destination
 	dstEntry := mcm.NewDSTFromString(*dstAddress, *memo, *amount)
+	if !dstEntry.ValidateReference() {
+		fmt.Fprintln(os.Stderr, "Error: Invalid memo")
+		os.Exit(1)
+	}
 	tx.AddDestination(dstEntry)
 	tx.SetDestinationCount(1)
 

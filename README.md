@@ -123,7 +123,11 @@ Common errors you might encounter:
 Error: Insufficient balance to send amount and fee
 Error: Public key does not match source address
 Error: Source account address is required
+Error: Invalid memo
 Failed to resolve TAG: TAG not found
+Failed to create transaction: exit status 1
+Resolved TAG <address> to address 0x... (0) with amount <amount>  # TAG resolution success
+Failed to resolve TAG <address>: TAG not found                    # TAG resolution failure
 ```
 
 # Support & Community
