@@ -17,6 +17,10 @@
   - [Transaction Creation](#creating-a-transaction)
   - [Important Notes](#important-notes)
   - [Security Best Practices](#security-best-practices)
+- [Transaction Queries](#transaction-queries)
+  - [Get Transaction Details](#1-get-transaction-details)
+  - [Get Address Transactions](#2-get-address-transactions)
+  - [Important Notes for Exchange Integration](#important-notes-for-exchange-integration)
 
 ## Prerequisites
 
@@ -236,4 +240,120 @@ Example output:
 - Never share or reuse the secret key
 - Keep track of which public keys have been used
 - Verify all addresses and amounts before submitting
+
+## Transaction Queries
+Transaction queries are essential for tracking deposits and managing exchange operations. The MeshAPI provides several endpoints for retrieving transaction information.
+
+### 1. Get Transaction Details
+To retrieve details of a specific transaction:
+
+```bash
+curl -X POST http://35.208.202.76:8080/search/transactions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "network_identifier": {
+      "blockchain": "mochimo",
+      "network": "mainnet"
+    },
+    "transaction_identifier": {
+      "hash": "<TRANSACTION_HASH>"
+    }
+  }'
+```
+
+Example Response:
+```json
+{
+  "transactions": [{
+    "block_identifier": {
+      "index": 671568,
+      "hash": "0x6589babda9737f4ccdd2ed852937f4142aff0c3c810e6f97ae522e8278a97c41"
+    },
+    "transaction_identifier": {
+      "hash": "0x1a7b2b7f7214d385399fa29580eae1d5709cf0955d03339631cbe99ec12c6286"
+    },
+    "operations": [
+      {
+        "operation_identifier": {"index": 0},
+        "type": "SOURCE_TRANSFER",
+        "status": "PENDING",
+        "account": {"address": "0x11c4fe438399b40457fc75fb08732459ef44b459"},
+        "amount": {
+          "value": "-10000",
+          "currency": {"symbol": "MCM", "decimals": 9}
+        }
+      },
+      {
+        "operation_identifier": {"index": 1},
+        "type": "DESTINATION_TRANSFER",
+        "status": "PENDING",
+        "account": {"address": "0x7ef084f718460de2bda22240c4dca2aef6bacdee"},
+        "amount": {
+          "value": "9500",
+          "currency": {"symbol": "MCM", "decimals": 9}
+        },
+        "metadata": {"memo": "TEST-4"}
+      },
+      {
+        "operation_identifier": {"index": 2},
+        "type": "FEE",
+        "status": "PENDING",
+        "account": {"address": "0xde6c06720a95122fa23a9d1af64f91bcf3c27b38"},
+        "amount": {
+          "value": "500",
+          "currency": {"symbol": "MCM", "decimals": 9}
+        }
+      }
+    ],
+    "metadata": {
+      "block_to_live": 0,
+      "change_total": 0,
+      "fee_total": 500,
+      "send_total": 9500
+    },
+    "timestamp": 1740249206000
+  }],
+  "total_count": 1
+}
+```
+
+### 2. Get Address Transactions
+To retrieve all transactions for a specific address (useful for scanning deposits):
+
+```bash
+curl -X POST http://35.208.202.76:8080/search/transactions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "network_identifier": {
+      "blockchain": "mochimo",
+      "network": "mainnet"
+    },
+    "account_identifier": {
+      "address": "<ADDRESS>"
+    }
+  }'
+```
+
+The response will include all transactions where the address appears as either source or destination.
+
+### Important Notes for Exchange Integration:
+1. **Transaction Monitoring**:
+   - Poll `/search/transactions` with your deposit address to monitor incoming transactions
+   - Verify transaction status through `status` field in operations
+   - Check `amount` values for deposit amounts
+   - Verify `block_identifier` to ensure transaction finality
+
+2. **Processing Deposits**:
+   - Look for operations of type "DESTINATION_TRANSFER"
+   - Verify the destination address matches your deposit address
+   - Use the `amount` field to credit user accounts
+   - Check memo field for user-specific data if implemented
+
+3. **Best Practices**:
+   - Cache transaction results to avoid redundant queries
+   - Implement exponential backoff for API requests
+   - Consider running your own MeshAPI instance for production use
+   - Monitor the `timestamp` field to track transaction age
+
+The MeshAPI provides equivalent functionality to MCM v2's API, making it suitable for exchange integration with improved features and reliability.
 
