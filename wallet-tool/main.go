@@ -22,10 +22,11 @@ import (
 )
 
 const (
-	MESH_API_URL           = "http://api-aus.mochimo.org:8080" // Changed to match the example URL
 	MAX_INDEX_SEARCH       = 1000
 	CHECK_MEMPOOL_INTERVAL = 5 // seconds
 )
+
+var MESH_API_URL = "http://35.208.202.76:8080" // Changed to match the example URL
 
 // Types for wallet cache
 type WalletCache struct {
@@ -458,7 +459,10 @@ func GetNetworkStatus() (*NetworkStatus, error) {
 }
 
 // CheckMempool checks if a transaction is in the mempool
-func CheckMempool(txID string) (bool, error) {
+func CheckMempool(txID string, verbose bool) (bool, error) {
+	// Normalize txID by removing 0x prefix if present for consistent comparison
+	txID = strings.TrimPrefix(txID, "0x")
+
 	// Create request body
 	reqBody := map[string]interface{}{
 		"network_identifier": map[string]string{
@@ -480,22 +484,54 @@ func CheckMempool(txID string) (bool, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return false, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
-
-	// Parse response
-	var mempoolResp MempoolResponse
-	err = json.NewDecoder(resp.Body).Decode(&mempoolResp)
+	// Read full response for debugging
+	respBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return false, err
 	}
 
-	// Check if txID is in mempool
+	// Print mempool contents only in verbose mode
+	if verbose {
+		fmt.Println("Mempool contents:", string(respBody))
+	}
+
+	if resp.StatusCode != 200 {
+		return false, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	// Parse response from saved body
+	var mempoolResp MempoolResponse
+	err = json.Unmarshal(respBody, &mempoolResp)
+	if err != nil {
+		return false, err
+	}
+
+	if verbose {
+		fmt.Printf("Searching for transaction %s in mempool with %d transactions\n",
+			txID, len(mempoolResp.TransactionIdentifiers))
+	}
+
+	// Check if txID is in mempool (with normalization)
 	for _, tx := range mempoolResp.TransactionIdentifiers {
-		if tx.Hash == txID {
+		// Normalize hash by removing 0x prefix if present
+		txHashInMempool := strings.TrimPrefix(tx.Hash, "0x")
+
+		// Only print comparison in verbose mode
+		if verbose {
+			fmt.Printf("Comparing mempool tx: %s with expected: %s\n", txHashInMempool, txID)
+		}
+
+		if txHashInMempool == txID {
 			return true, nil
 		}
+	}
+
+	// As a fallback, check directly in the JSON string
+	if strings.Contains(string(respBody), txID) {
+		if verbose {
+			fmt.Printf("Transaction %s found in mempool JSON but not detected by our parser!\n", txID)
+		}
+		return true, nil
 	}
 
 	return false, nil
@@ -597,7 +633,7 @@ func VerifyTransactionInBlock(blockHash string, txID string) (bool, error) {
 	for _, tx := range blockResp.Block.Transactions {
 		// Normalize comparison by removing 0x prefix if present
 		txHashInBlock := strings.TrimPrefix(tx.TransactionIdentifier.Hash, "0x")
-		fmt.Printf("Comparing tx: %s with expected: %s\n", txHashInBlock, txID)
+		// fmt.Printf("Comparing tx: %s with expected: %s\n", txHashInBlock, txID)
 
 		if txHashInBlock == txID {
 			return true, nil
@@ -776,6 +812,9 @@ func main() {
 	csvFile := flag.String("csv", "entries.csv", "CSV file with addresses and amounts")
 	walletCacheFile := flag.String("wallet", "wallet-cache.json", "Wallet cache file")
 	fee := flag.Uint64("fee", 500, "Transaction fee in nanoMCM")
+	api := flag.String("api", MESH_API_URL, "Mesh API URL")
+	MESH_API_URL = *api
+
 	flag.Parse()
 
 	// Read entries CSV
@@ -904,6 +943,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Normalize txID by removing 0x prefix (in case it was returned with prefix)
+	txID = strings.TrimPrefix(txID, "0x")
+
 	fmt.Printf("Transaction submitted! TX ID: %s\n", txID)
 	fmt.Println("Monitoring mempool for transaction...")
 
@@ -922,50 +964,32 @@ func main() {
 	txConfirmed := false
 	startTime := time.Now()
 	lastCheckedBlock := currentBlock
+	skipMempoolCheck := false
+
+	fmt.Println("Starting transaction monitoring...")
 
 	for {
-		// Check mempool
-		found, err := CheckMempool(txID)
-		if err != nil {
-			fmt.Printf("Error checking mempool: %v\n", err)
-		} else if found && !inMempool {
-			inMempool = true
-			fmt.Println("✅ Transaction found in mempool!")
-		} else if !found && inMempool {
-			fmt.Println("Transaction left mempool - checking blocks...")
+		// Only check mempool if we haven't found the transaction yet and aren't skipping checks
+		if !inMempool && !skipMempoolCheck {
+			// Use non-verbose mempool checking to reduce output noise
+			found, err := CheckMempool(txID, false)
+			if err != nil {
+				fmt.Printf("Error checking mempool: %v\n", err)
+			} else if found {
+				inMempool = true
+				fmt.Println("✅ Transaction found in mempool!")
+				skipMempoolCheck = true
 
-			// Try direct check when transaction leaves mempool
-			directCheck, _ := DirectlyCheckTransaction(txID)
-			if directCheck {
-				txConfirmed = true
-				fmt.Println("✅ Transaction confirmed via direct check!")
-
-				// Move CSV file to success folder
-				successDir := "correctly-send"
-
-				// Create directory if it doesn't exist
-				if _, err := os.Stat(successDir); os.IsNotExist(err) {
-					if err := os.Mkdir(successDir, 0755); err != nil {
-						fmt.Printf("Warning: Failed to create directory %s: %v\n", successDir, err)
-					}
-				}
-
-				// Get base filename without path
-				baseFileName := *csvFile
-				if lastSlash := strings.LastIndex(baseFileName, "/"); lastSlash != -1 {
-					baseFileName = baseFileName[lastSlash+1:]
-				}
-
-				// Move file to success directory
-				destFile := fmt.Sprintf("%s/%s", successDir, baseFileName)
-				if err := os.Rename(*csvFile, destFile); err != nil {
-					fmt.Printf("Warning: Failed to move CSV file to %s: %v\n", destFile, err)
-				} else {
-					fmt.Printf("CSV file moved to %s\n", destFile)
-				}
-
-				break
+				// For debugging purposes, once we find it in mempool,
+				// we can do one verbose check to see details
+				// CheckMempool(txID, true)
 			}
+		}
+
+		// Add a small delay before first block check to give the transaction time to propagate
+		if !inMempool && time.Since(startTime) < 15*time.Second {
+			time.Sleep(CHECK_MEMPOOL_INTERVAL * time.Second)
+			continue
 		}
 
 		// Check if block has changed - using our more reliable function
@@ -976,15 +1000,21 @@ func main() {
 			lastCheckedBlock = newBlock
 			fmt.Printf("Block changed to %d. Checking for transaction...\n", newBlock)
 
-			// Try both verification methods
-			verified, verifyErr := VerifyTransactionInBlock(blockHash, txID)
-			if verifyErr != nil {
-				fmt.Printf("Error verifying transaction in block: %v\n", verifyErr)
+			// Try verification methods
+			verified, _ := VerifyTransactionInBlock(blockHash, txID)
 
-				// Try direct check as backup
-				directCheck, _ := DirectlyCheckTransaction(txID)
-				if directCheck {
-					verified = true
+			// If not found in block but was previously in mempool, check if it left the mempool
+			if !verified && inMempool {
+				// Check mempool quietly (non-verbose) to see if transaction is still there
+				stillInMempool, _ := CheckMempool(txID, false)
+				if !stillInMempool {
+					fmt.Println("Transaction left mempool - checking if confirmed...")
+
+					// Try direct check as backup
+					directCheck, _ := DirectlyCheckTransaction(txID)
+					if directCheck {
+						verified = true
+					}
 				}
 			}
 
