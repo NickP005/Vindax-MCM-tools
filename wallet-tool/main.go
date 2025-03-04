@@ -26,7 +26,7 @@ const (
 	CHECK_MEMPOOL_INTERVAL = 5 // seconds
 )
 
-var MESH_API_URL = "http://35.208.202.76:8080" // Changed to match the example URL
+var MESH_API_URL = "http://ip.leonapp.it:8081" // Changed to match the example URL
 
 // Types for wallet cache
 type WalletCache struct {
@@ -717,13 +717,31 @@ func VerifyCurrentIndex(secretKey string, startIndex uint64) (uint64, []byte, ui
 	// Resolve tag to check balance
 	resolved_tag, amount, err := ResolveTag(tag)
 	if err != nil {
-		fmt.Printf("Using index %d with 0 nMCM (please refill this address: %s)\n", 0, hex.EncodeToString(tag))
-		return 0, tag, 0, fmt.Errorf("Error: Wallet address at index %d has no balance", startIndex)
+		fmt.Printf("Using index %d with 0 nMCM (please refill this address: %s)\n", 0, AddrToBase58(tag))
+		// If tag resolution fails, we're using the first index anyway
+		// This happens with new wallets or empty addresses
+		fmt.Println("No funds found at index 0. Using this address for new wallet.")
+		return 0, tag, 0, nil
 	}
+
 	fmt.Println("Resolved tag:", resolved_tag)
 
+	// Make sure we have a valid tag before processing
+	if resolved_tag == "" {
+		fmt.Printf("Using index %d with 0 nMCM (please refill this address: %s)\n", 0, AddrToBase58(tag))
+		// If tag resolution fails, we're using the first index anyway
+		// This happens with new wallets or empty addresses
+		fmt.Println("No funds found at index 0. Using this address for new wallet.")
+		return 0, tag, 0, nil
+	}
+
 	// tagged_address_hash is last 20 bytes of resolved_tag (40 bytes)
-	resolved_tag_bytes, _ := hex.DecodeString(resolved_tag[2:])
+	resolved_tag_bytes, err := hex.DecodeString(resolved_tag[2:])
+	if err != nil || len(resolved_tag_bytes) < 20 {
+		fmt.Printf("Warning: Invalid resolved tag format. Using index %d as fallback.\n", startIndex)
+		return startIndex, tag, amount, nil
+	}
+
 	tagged_address_hash := resolved_tag_bytes[len(resolved_tag_bytes)-20:]
 
 	// Check if startIndex gives the right tag
@@ -754,7 +772,8 @@ func VerifyCurrentIndex(secretKey string, startIndex uint64) (uint64, []byte, ui
 		}
 	}
 
-	return 0, nil, 0, fmt.Errorf("Error: Wallet address not found in first %d indices", MAX_INDEX_SEARCH)
+	fmt.Println("Warning: Could not find matching wallet address. Using index 0.")
+	return 0, tag, amount, nil
 }
 
 // Debug functions to help diagnose issues
