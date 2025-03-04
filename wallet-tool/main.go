@@ -832,9 +832,14 @@ func main() {
 	walletCacheFile := flag.String("wallet", "wallet-cache.json", "Wallet cache file")
 	fee := flag.Uint64("fee", 500, "Transaction fee in nanoMCM")
 	api := flag.String("api", MESH_API_URL, "Mesh API URL")
+
+	// Parse flags first, before using any flag values
+	flag.Parse()
+
+	// Now assign MESH_API_URL after parsing flags
 	MESH_API_URL = *api
 
-	flag.Parse()
+	fmt.Printf("Using API endpoint: %s\n", MESH_API_URL)
 
 	// Read entries CSV
 	entries, err := ReadEntriesCSV(*csvFile)
