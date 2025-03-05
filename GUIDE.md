@@ -17,6 +17,10 @@
   - [Transaction Creation](#creating-a-transaction)
   - [Important Notes](#important-notes)
   - [Security Best Practices](#security-best-practices)
+- [Address Format Conversion](#address-format-conversion)
+  - [Base58 to Hex](#1-base58-to-hex-conversion)
+  - [Hex to Base58](#2-hex-to-base58-conversion)
+  - [When to Use Each Format](#when-to-use-each-format)
 - [Transaction Queries](#transaction-queries)
   - [Get Transaction Details](#1-get-transaction-details)
   - [Get Address Transactions](#2-get-address-transactions)
@@ -240,6 +244,41 @@ Example output:
 - Never share or reuse the secret key
 - Keep track of which public keys have been used
 - Verify all addresses and amounts before submitting
+
+## Address Format Conversion
+
+MCM 3.0 addresses can be represented in two formats:
+1. **Hex format**: 40-character string representing 20 bytes (e.g., `9f810c2447a76e93b17ebff96c0b29952e4355f1`)
+2. **Base58 format**: Shorter string with checksum for error detection (e.g., `kHtV35ttVpyiH42FePCiHo2iFmcJS3`)
+
+### Converting Between Formats
+Use tool-4 to easily convert between these formats:
+
+#### 1. Base58 to Hex Conversion
+When you need the raw hex address (e.g., for API calls):
+```bash
+./tool-4 -base58 <base58Address> -hex
+```
+
+Example output:
+```
+9f810c2447a76e93b17ebff96c0b29952e4355f1
+```
+
+#### 2. Hex to Base58 Conversion
+When you need a user-friendly address (e.g., for sharing with users):
+```bash
+./tool-4 -hex <hexAddress> -base58
+```
+
+Example output:
+```
+kHtV35ttVpyiH42FePCiHo2iFmcJS3
+```
+
+### When to Use Each Format
+- **Hex format**: Use for internal operations, API calls, and when precise control over the address is needed.
+- **Base58 format**: Use for user-facing operations, sharing addresses, and when error detection is important.
 
 ## Transaction Queries
 Transaction queries are essential for tracking deposits and managing exchange operations. The MeshAPI provides several endpoints for retrieving transaction information.

@@ -130,6 +130,22 @@ Resolved TAG <address> to address 0x... (0) with amount <amount>  # TAG resoluti
 Failed to resolve TAG <address>: TAG not found                    # TAG resolution failure
 ```
 
+## Tool 4
+A utility tool that converts between hex format (40 characters representing 20 bytes) and base58 format with integrated checksum for MCM 3.0 addresses.
+
+### Usage
+```bash
+# Build the tool
+cd tool-4
+go build
+
+# Convert hex to base58
+./tool-4 -hex <40_character_hex_string>
+
+# Convert base58 to hex
+./tool-4 -base58 <base58_string>
+```
+
 # Support & Community
 
 Join our communities for support and discussions:
