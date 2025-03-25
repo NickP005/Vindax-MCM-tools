@@ -580,7 +580,7 @@ func SubmitTransaction(signedTx string) (string, error) {
 }
 
 // VerifyTransactionInBlock checks if a transaction exists in a specific block
-func VerifyTransactionInBlock(blockHash string, txID string) (bool, error) {
+func VerifyTransactionInBlock(blockHeight uint64, txID string) (bool, error) {
 	// Normalize txID by removing 0x prefix if present for consistent comparison
 	txID = strings.TrimPrefix(txID, "0x")
 
@@ -591,7 +591,7 @@ func VerifyTransactionInBlock(blockHash string, txID string) (bool, error) {
 			"network":    "mainnet",
 		},
 		"block_identifier": map[string]interface{}{
-			"hash": blockHash,
+			"index": blockHeight,
 		},
 	}
 
@@ -626,14 +626,13 @@ func VerifyTransactionInBlock(blockHash string, txID string) (bool, error) {
 		return false, err
 	}
 
-	fmt.Printf("Searching for transaction %s in block with %d transactions\n",
-		txID, len(blockResp.Block.Transactions))
+	fmt.Printf("Searching for transaction %s in block %d with %d transactions\n",
+		txID, blockHeight, len(blockResp.Block.Transactions))
 
 	// Check if txID is in block transactions (with normalization)
 	for _, tx := range blockResp.Block.Transactions {
 		// Normalize comparison by removing 0x prefix if present
 		txHashInBlock := strings.TrimPrefix(tx.TransactionIdentifier.Hash, "0x")
-		// fmt.Printf("Comparing tx: %s with expected: %s\n", txHashInBlock, txID)
 
 		if txHashInBlock == txID {
 			return true, nil
@@ -777,7 +776,7 @@ func VerifyCurrentIndex(secretKey string, startIndex uint64) (uint64, []byte, ui
 }
 
 // Debug functions to help diagnose issues
-func DumpTxnInfo(tx *mcm.TXENTRY) {
+func DumpTxnInfo(tx mcm.TXENTRY) {
 	fmt.Println("--- Transaction Debug Info ---")
 	fmt.Printf("Send Total: %d\n", tx.GetSendTotal())
 	fmt.Printf("Change Total: %d\n", tx.GetChangeTotal())
@@ -827,11 +826,101 @@ func AddrToBase58(tag []byte) string {
 	return base58.Encode(combined)
 }
 
+// CreateTransaction constructs a new transaction with the given parameters
+// Returns the created transaction, the next index value, and any error
+func CreateTransaction(secretKey string, currentIndex uint64, tag []byte, balance uint64,
+	entries []SendEntry, fee uint64) (*mcm.TXENTRY, uint64, error) {
+	// Create transaction using mcminterface
+	tx := mcm.NewTXENTRY()
+
+	// Decode secret key
+	secretBytes, err := hex.DecodeString(secretKey)
+	if err != nil {
+		return nil, currentIndex, fmt.Errorf("failed to decode secret key: %v", err)
+	}
+
+	var privateKey [32]byte
+	copy(privateKey[:], secretBytes)
+
+	// Create keypairs for current and next indices
+	keychain, err := wots.NewKeychain(privateKey)
+	if err != nil {
+		return nil, currentIndex, fmt.Errorf("failed to create keychain: %v", err)
+	}
+
+	keychain.Index = currentIndex
+	fmt.Println("Using index", currentIndex)
+	currentKeyPair := keychain.Next()
+	nextKeyPair := keychain.Next()
+
+	// The next index will be currentIndex + 2 since we used Next() twice
+	nextIndex := currentIndex + 2
+
+	// Get proper public keys for source and change
+	srcPubKey := currentKeyPair.PublicKey[:2144]
+	chgPubKey := nextKeyPair.PublicKey[:2144]
+
+	// Set source and change addresses
+	srcAddr := mcm.WotsAddressFromBytes(srcPubKey)
+	srcAddr.SetTAG(tag)
+
+	chgAddr := mcm.WotsAddressFromBytes(chgPubKey)
+	chgAddr.SetTAG(tag)
+
+	tx.SetSourceAddress(srcAddr)
+	tx.SetChangeAddress(chgAddr)
+
+	// Calculate total amount to send
+	totalToSend := uint64(0)
+	for _, entry := range entries {
+		totalToSend += entry.AmountToSend
+	}
+
+	// Set amounts
+	tx.SetSendTotal(totalToSend)
+	tx.SetChangeTotal(balance - totalToSend - fee)
+	tx.SetFee(fee)
+
+	// Add destinations
+	for _, entry := range entries {
+		dstHex := hex.EncodeToString(entry.AddressBin)
+		dstEntry := mcm.NewDSTFromString(dstHex, entry.Memo, entry.AmountToSend)
+		tx.AddDestination(dstEntry)
+	}
+	tx.SetDestinationCount(uint8(len(entries)))
+
+	// Generate transaction hash
+	var message [32]byte = tx.GetMessageToSign()
+
+	// Sign transaction
+	var signature [2144]byte = currentKeyPair.Sign(message)
+	tx.SetWotsSignature(signature[:])
+
+	// Set address components
+	var addr_seed_default_tag [32]byte
+	copy(addr_seed_default_tag[:], currentKeyPair.Components.AddrSeed[:20])
+	copy(addr_seed_default_tag[20:], []byte{0x42, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00})
+
+	tx.SetWotsSigAddresses(addr_seed_default_tag[:])
+	tx.SetWotsSigPubSeed(currentKeyPair.Components.PublicSeed)
+
+	tx.SetSignatureScheme("wotsp")
+	tx.SetBlockToLive(0)
+
+	// Debug output
+	DumpTxnInfo(tx)
+
+	return &tx, nextIndex, nil
+}
+
 func main() {
 	csvFile := flag.String("csv", "entries.csv", "CSV file with addresses and amounts")
 	walletCacheFile := flag.String("wallet", "wallet-cache.json", "Wallet cache file")
 	fee := flag.Uint64("fee", 500, "Transaction fee in nanoMCM")
 	api := flag.String("api", MESH_API_URL, "Mesh API URL")
+	confirmations := flag.Int("confirmations", 1, "Number of blocks to confirm transaction")
+	keeptrying := flag.Bool("keeptrying", false, "Keep trying to broadcast transaction if not confirmed")
+	timeout := flag.Int("timeout", 120, "Timeout in minutes for transaction monitoring")
 
 	// Parse flags first, before using any flag values
 	flag.Parse()
@@ -867,14 +956,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Update index in cache
-	cache.Index = currentIndex + 1
-	err = SaveWalletCache(*walletCacheFile, cache)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving wallet cache: %v\n", err)
-		os.Exit(1)
-	}
-
 	// Check if wallet has sufficient balance
 	totalToSend := uint64(0)
 	for _, entry := range entries {
@@ -895,71 +976,27 @@ func main() {
 	fmt.Printf("Wallet balance: %d nMCM, sending total: %d nMCM (including %d nMCM fee)\n",
 		balance, totalNeeded, *fee)
 	fmt.Printf("Using wallet address: %s\n", cache.RefillAddress)
-
-	// Create transaction using mcminterface - following tool-3 approach
-	tx := mcm.NewTXENTRY()
-
-	// Decode secret key
-	secretBytes, _ := hex.DecodeString(cache.SecretKey)
-	var privateKey [32]byte
-	copy(privateKey[:], secretBytes)
-
-	// Create keypairs for current and next indices
-	keychain, _ := wots.NewKeychain(privateKey)
-	keychain.Index = currentIndex
-	fmt.Println("Using index", currentIndex)
-	currentKeyPair := keychain.Next()
-	nextKeyPair := keychain.Next()
-
-	// Get proper public keys for source and change
-	srcPubKey := currentKeyPair.PublicKey[:2144]
-	chgPubKey := nextKeyPair.PublicKey[:2144]
-
-	// Set source and change addresses exactly as in tool-3
-	srcAddr := mcm.WotsAddressFromBytes(srcPubKey)
-	srcAddr.SetTAG(tag)
-
-	chgAddr := mcm.WotsAddressFromBytes(chgPubKey)
-	chgAddr.SetTAG(tag)
-
-	tx.SetSourceAddress(srcAddr)
-	tx.SetChangeAddress(chgAddr)
-
-	// Set amounts
-	tx.SetSendTotal(totalToSend)
-	tx.SetChangeTotal(balance - totalToSend - *fee)
-	tx.SetFee(*fee)
-
-	// Add destinations using exact same approach as tool-3, but now with memos
-	for _, entry := range entries {
-		dstHex := hex.EncodeToString(entry.AddressBin)
-		dstEntry := mcm.NewDSTFromString(dstHex, entry.Memo, entry.AmountToSend)
-		tx.AddDestination(dstEntry)
+	fmt.Printf("Required confirmations: %d\n", *confirmations)
+	if *keeptrying {
+		fmt.Println("Will keep broadcasting transaction until confirmed")
 	}
-	tx.SetDestinationCount(uint8(len(entries)))
 
-	// Generate transaction hash
-	var message [32]byte = tx.GetMessageToSign()
+	// Create initial transaction
+	tx, nextIndex, err := CreateTransaction(cache.SecretKey, currentIndex, tag, balance, entries, *fee)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating transaction: %v\n", err)
+		os.Exit(1)
+	}
 
-	// Sign transaction
-	var signature [2144]byte = currentKeyPair.Sign(message)
-	tx.SetWotsSignature(signature[:])
+	// Update index in cache
+	cache.Index = nextIndex
+	err = SaveWalletCache(*walletCacheFile, cache)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving wallet cache: %v\n", err)
+		os.Exit(1)
+	}
 
-	// Set address components exactly as tool-3
-	var addr_seed_default_tag [32]byte
-	copy(addr_seed_default_tag[:], currentKeyPair.Components.AddrSeed[:20])
-	copy(addr_seed_default_tag[20:], []byte{0x42, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00})
-
-	tx.SetWotsSigAddresses(addr_seed_default_tag[:])
-	tx.SetWotsSigPubSeed(currentKeyPair.Components.PublicSeed)
-
-	tx.SetSignatureScheme("wotsp")
-	tx.SetBlockToLive(0)
-
-	// Debug output before submitting
-	DumpTxnInfo(&tx)
-
-	// Submit transaction
+	// Initial transaction submission
 	fmt.Println("Submitting transaction...")
 	txID, err := SubmitTransaction(tx.String())
 	if err != nil {
@@ -967,13 +1004,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Normalize txID by removing 0x prefix (in case it was returned with prefix)
+	// Normalize txID by removing 0x prefix
 	txID = strings.TrimPrefix(txID, "0x")
-
 	fmt.Printf("Transaction submitted! TX ID: %s\n", txID)
 	fmt.Println("Monitoring mempool for transaction...")
 
-	// More reliable block change detection
+	// Get initial network status
 	status, err := GetNetworkStatus()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting network status: %v\n", err)
@@ -983,109 +1019,169 @@ func main() {
 	currentBlock := status.CurrentBlockIdentifier.Index
 	fmt.Printf("Current block: %d\n", currentBlock)
 
-	// Monitor mempool and blocks
+	// Transaction monitoring variables
 	inMempool := false
 	txConfirmed := false
+	confirmBlockHeight := uint64(0)
+	confirmedCount := 0
 	startTime := time.Now()
 	lastCheckedBlock := currentBlock
 	skipMempoolCheck := false
+	failedAttempts := 0
+	maxRetries := 5
+
+	// Calculate timeout based on confirmations required
+	monitorTimeout := time.Duration(*timeout) * time.Minute
+	// Add 2 minutes per additional confirmation beyond the first
+	if *confirmations > 1 {
+		extraTime := time.Duration(*confirmations-1) * 2 * time.Minute
+		monitorTimeout += extraTime
+	}
 
 	fmt.Println("Starting transaction monitoring...")
+	fmt.Printf("Monitoring will continue for up to %d minutes\n", monitorTimeout/time.Minute)
 
 	for {
-		// Only check mempool if we haven't found the transaction yet and aren't skipping checks
-		if !inMempool && !skipMempoolCheck {
-			// Use non-verbose mempool checking to reduce output noise
+		// Only check mempool if we haven't found the transaction in a block yet
+		if confirmBlockHeight == 0 && !skipMempoolCheck {
 			found, err := CheckMempool(txID, false)
 			if err != nil {
 				fmt.Printf("Error checking mempool: %v\n", err)
-			} else if found {
+			} else if found && !inMempool {
 				inMempool = true
 				fmt.Println("✅ Transaction found in mempool!")
-				skipMempoolCheck = true
-
-				// For debugging purposes, once we find it in mempool,
-				// we can do one verbose check to see details
-				// CheckMempool(txID, true)
 			}
 		}
 
-		// Add a small delay before first block check to give the transaction time to propagate
-		if !inMempool && time.Since(startTime) < 15*time.Second {
+		// Wait a bit before first block check
+		if !inMempool && time.Since(startTime) < 15*time.Second && confirmBlockHeight == 0 {
 			time.Sleep(CHECK_MEMPOOL_INTERVAL * time.Second)
 			continue
 		}
 
-		// Check if block has changed - using our more reliable function
-		blockChanged, newBlock, blockHash, err := IsBlockChanged(lastCheckedBlock)
+		// Check if block has changed
+		blockChanged, newBlock, _, err := IsBlockChanged(lastCheckedBlock)
 		if err != nil {
 			fmt.Printf("Error checking block status: %v\n", err)
 		} else if blockChanged {
 			lastCheckedBlock = newBlock
 			fmt.Printf("Block changed to %d. Checking for transaction...\n", newBlock)
 
-			// Try verification methods
-			verified, _ := VerifyTransactionInBlock(blockHash, txID)
+			// If we have a confirmation block, we check that block to verify the tx is still there
+			if confirmBlockHeight > 0 {
+				verified, _ := VerifyTransactionInBlock(confirmBlockHeight, txID)
+				if verified {
+					confirmedCount++
+					fmt.Printf("✅ Transaction confirmation #%d of %d\n", confirmedCount, *confirmations)
 
-			// If not found in block but was previously in mempool, check if it left the mempool
-			if !verified && inMempool {
-				// Check mempool quietly (non-verbose) to see if transaction is still there
-				stillInMempool, _ := CheckMempool(txID, false)
-				if !stillInMempool {
-					fmt.Println("Transaction left mempool - checking if confirmed...")
+					// Reset the inMempool flag since we've found it in a block
+					inMempool = false
 
-					// Try direct check as backup
-					directCheck, _ := DirectlyCheckTransaction(txID)
-					if directCheck {
-						verified = true
+					if confirmedCount >= *confirmations {
+						txConfirmed = true
+						fmt.Printf("✅ Transaction confirmed with %d confirmations!\n", *confirmations)
+						break
 					}
-				}
-			}
-
-			if verified {
-				txConfirmed = true
-				fmt.Println("✅ Transaction confirmed in block!")
-
-				// Move the CSV file to correctly-send/ folder
-				successDir := "correctly-send"
-
-				// Create directory if it doesn't exist
-				if _, err := os.Stat(successDir); os.IsNotExist(err) {
-					if err := os.Mkdir(successDir, 0755); err != nil {
-						fmt.Printf("Warning: Failed to create directory %s: %v\n", successDir, err)
-					}
-				}
-
-				// Get base filename without path
-				baseFileName := *csvFile
-				if lastSlash := strings.LastIndex(baseFileName, "/"); lastSlash != -1 {
-					baseFileName = baseFileName[lastSlash+1:]
-				}
-
-				// Move file to success directory
-				destFile := fmt.Sprintf("%s/%s", successDir, baseFileName)
-				if err := os.Rename(*csvFile, destFile); err != nil {
-					fmt.Printf("Warning: Failed to move CSV file to %s: %v\n", destFile, err)
 				} else {
-					fmt.Printf("CSV file moved to %s\n", destFile)
+					// If tx disappeared from the block where we previously found it, this is serious
+					fmt.Println("⚠️ WARNING: Transaction no longer found in confirmation block! Possible reorg.")
+					confirmBlockHeight = 0
+					confirmedCount = 0
+
+					if *keeptrying {
+						fmt.Println("Will attempt to rebroadcast transaction...")
+						inMempool = false
+						skipMempoolCheck = false
+
+						// Rebroadcast the transaction
+						txID, err = SubmitTransaction(tx.String())
+						if err != nil {
+							failedAttempts++
+							fmt.Printf("Error resubmitting transaction: %v (attempt %d of %d)\n",
+								err, failedAttempts, maxRetries)
+
+							if failedAttempts >= maxRetries {
+								fmt.Println("❌ Max retry attempts reached. Exiting...")
+								break
+							}
+						} else {
+							txID = strings.TrimPrefix(txID, "0x")
+							fmt.Printf("Transaction resubmitted. New TX ID: %s\n", txID)
+						}
+					} else {
+						fmt.Println("❌ Transaction may have been orphaned. Use -keeptrying to auto-rebroadcast.")
+						break
+					}
+				}
+			} else {
+				// No confirmation block yet, check new block for our transaction
+				verified, _ := VerifyTransactionInBlock(newBlock, txID)
+
+				// If not in block but was in mempool, check if it left mempool
+				if !verified && inMempool {
+					stillInMempool, _ := CheckMempool(txID, false)
+					if !stillInMempool {
+						fmt.Println("Transaction left mempool - checking if confirmed...")
+						directCheck, _ := DirectlyCheckTransaction(txID)
+						if directCheck {
+							verified = true
+						} else if *keeptrying {
+							fmt.Println("⚠️ Transaction left mempool but not found in blocks. Rebroadcasting...")
+							inMempool = false
+							skipMempoolCheck = false
+
+							// Rebroadcast the transaction
+							txID, err = SubmitTransaction(tx.String())
+							if err != nil {
+								failedAttempts++
+								fmt.Printf("Error resubmitting transaction: %v (attempt %d of %d)\n",
+									err, failedAttempts, maxRetries)
+
+								if failedAttempts >= maxRetries {
+									fmt.Println("❌ Max retry attempts reached. Exiting...")
+									break
+								}
+							} else {
+								txID = strings.TrimPrefix(txID, "0x")
+								fmt.Printf("Transaction resubmitted. New TX ID: %s\n", txID)
+							}
+						} else {
+							fmt.Println("❌ Transaction may have been orphaned. Use -keeptrying to auto-rebroadcast.")
+							break
+						}
+					}
 				}
 
-				break
-			} else {
-				fmt.Println("Transaction not found in block. Will continue monitoring...")
+				if verified {
+					confirmBlockHeight = newBlock
+					confirmedCount = 1
+					fmt.Printf("✅ Transaction found in block %d\n", newBlock)
+
+					// Reset the inMempool flag since we've found it in a block
+					inMempool = false
+
+					// If only one confirmation is required, we're done
+					if *confirmations <= 1 {
+						txConfirmed = true
+						fmt.Println("✅ Transaction confirmed successfully!")
+						break
+					}
+				}
 			}
 		}
 
-		// Check if we've been in the mempool for a long time
-		if inMempool && time.Since(startTime) > 5*time.Minute {
+		// Only show mempool warning if we're still actually in mempool and haven't found the tx in a block
+		if inMempool && confirmBlockHeight == 0 && time.Since(startTime) > 5*time.Minute {
 			fmt.Println("Transaction has been in mempool for over 5 minutes.")
 			fmt.Println("This may indicate issues with the transaction or network congestion.")
 		}
 
-		// Timeout after 10 minutes
-		if time.Since(startTime) > 10*time.Minute {
-			fmt.Println("⚠️ Monitoring timed out after 10 minutes.")
-			if inMempool {
+		// Timeout after the configured duration
+		if time.Since(startTime) > monitorTimeout {
+			fmt.Printf("⚠️ Monitoring timed out after %d minutes.\n", monitorTimeout/time.Minute)
+			if confirmedCount > 0 {
+				fmt.Printf("Transaction had %d of %d confirmations. You can check its status manually.\n", confirmedCount, *confirmations)
+			} else if inMempool {
 				fmt.Println("Transaction is still in the mempool. Check later for confirmation.")
 			} else {
 				fmt.Println("Transaction was not found in mempool or blocks. Please check manually.")
@@ -1098,6 +1194,30 @@ func main() {
 
 	if txConfirmed {
 		fmt.Println("Transaction processing completed successfully!")
+
+		// Move the CSV file to correctly-send/ folder
+		successDir := "correctly-send"
+
+		// Create directory if it doesn't exist
+		if _, err := os.Stat(successDir); os.IsNotExist(err) {
+			if err := os.Mkdir(successDir, 0755); err != nil {
+				fmt.Printf("Warning: Failed to create directory %s: %v\n", successDir, err)
+			}
+		}
+
+		// Get base filename without path
+		baseFileName := *csvFile
+		if lastSlash := strings.LastIndex(baseFileName, "/"); lastSlash != -1 {
+			baseFileName = baseFileName[lastSlash+1:]
+		}
+
+		// Move file to success directory
+		destFile := fmt.Sprintf("%s/%s", successDir, baseFileName)
+		if err := os.Rename(*csvFile, destFile); err != nil {
+			fmt.Printf("Warning: Failed to move CSV file to %s: %v\n", destFile, err)
+		} else {
+			fmt.Printf("CSV file moved to %s\n", destFile)
+		}
 	} else {
 		fmt.Println("Transaction processing completed but confirmation status is uncertain.")
 	}
