@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	MAX_INDEX_SEARCH       = 1000
+	MAX_INDEX_SEARCH       = 10000
 	CHECK_MEMPOOL_INTERVAL = 5 // seconds
 )
 
@@ -757,7 +757,22 @@ func VerifyCurrentIndex(secretKey string, startIndex uint64) (uint64, []byte, ui
 	}
 
 	// If startIndex is wrong, search for the correct index
-	for i := uint64(0); i < MAX_INDEX_SEARCH; i++ {
+	for i := uint64(max(keychain.Index, 3) - 3); i < MAX_INDEX_SEARCH; i++ {
+		keychain.Index = i
+		test_keypair := keychain.Next()
+
+		// Properly extract the tag using go_mcminterface
+		test_mcmAddr := mcm.WotsAddressFromBytes(test_keypair.PublicKey[:2144])
+		test_add_hash := test_mcmAddr.GetAddress()
+
+		if bytes.Equal(tagged_address_hash, test_add_hash) {
+			fmt.Printf("Found correct wallet address at index %d\n", i)
+			return i, tag, amount, nil
+		}
+	}
+
+	// Otherwise, search from 0 to startIndex
+	for i := uint64(0); i < startIndex; i++ {
 		keychain.Index = i
 		test_keypair := keychain.Next()
 
