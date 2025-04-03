@@ -11,6 +11,8 @@ This tool allows you to send MCM to multiple destinations in a single transactio
 - Automatically tracks the correct WOTS+ index in the wallet chain
 - Monitors transaction status until confirmation
 - Handles multiple recipients in a single transaction
+- Supports multiple confirmation monitoring
+- Can automatically retry broadcasts for failed transactions
 
 ## Requirements
 
@@ -62,6 +64,9 @@ The wallet tool supports the following flags:
 - `-csv string`: Path to the CSV file with addresses and amounts (default "entries.csv")
 - `-fee uint`: Transaction fee in nanoMCM (default 500)
 - `-api string`: Mesh API URL (default "http://35.208.202.76:8080")
+- `-confirmations int`: Number of blocks to confirm transaction (default 1)
+- `-keeptrying`: Keep trying to broadcast transaction if not confirmed
+- `-timeout int`: Timeout in minutes for transaction monitoring (default 10)
 
 ## CSV Format
 
@@ -89,11 +94,30 @@ Specify a custom transaction fee (in nanoMCM):
 ./wallet-tool -wallet wallet-cache.json -csv entries.csv -fee 1000
 ```
 
+Wait for multiple confirmations:
+```
+./wallet-tool -wallet wallet-cache.json -csv entries.csv -confirmations 5
+```
+
+Automatically retry broadcasting if transaction is not confirmed:
+```
+./wallet-tool -wallet wallet-cache.json -csv entries.csv -keeptrying
+```
+
 Use a different Mochimo Mesh API endpoint:
 ```
 ./wallet-tool -wallet wallet-cache.json -csv entries.csv -api http://custom-api.example.com:8080
 ```
 
+Increase monitoring timeout for large confirmations:
+```
+./wallet-tool -wallet wallet-cache.json -csv entries.csv -confirmations 10 -timeout 30
+```
+
 ## Troubleshooting
 
 If you see the error "flag provided but not defined", make sure you're only using the flags listed above.
+
+When monitoring transactions that require multiple confirmations, the tool will adjust its timeout period accordingly, adding 2 minutes per confirmation beyond the first. You can override this with the `-timeout` flag.
+
+If a transaction disappears from the blockchain (due to a chain reorganization) and you used the `-keeptrying` flag, the tool will automatically rebroadcast the transaction.
